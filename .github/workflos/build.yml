@@ -1,0 +1,55 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find project
+        run: |
+          ZIP=$(find . -maxdepth 1 -iname '*.zip' | head -n 1)
+          if [ -n "$ZIP" ]; then
+            echo "Zip mili: $ZIP"
+            mkdir -p _src
+            unzip -q -o "$ZIP" -d _src
+            SETTINGS=$(find _src -name settings.gradle -not -path '*/.*' | head -n 1)
+            if [ -z "$SETTINGS" ]; then
+              echo "ERROR: zip ke andar settings.gradle nahi mili"; exit 1
+            fi
+            PROJ=$(dirname "$SETTINGS")
+          else
+            PROJ=.
+          fi
+          if [ ! -f "$PROJ/app/build.gradle" ]; then
+            echo "ERROR: $PROJ/app/build.gradle nahi mili. 'app' folder missing hai."
+            ls -R "$PROJ" | head -50
+            exit 1
+          fi
+          echo "PROJ=$PROJ" >> "$GITHUB_ENV"
+          echo "Project folder: $PROJ"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Accept Android licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build debug APK
+        working-directory: ${{ env.PROJ }}
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JanjuaFileTransfer-APK
+          path: ${{ env.PROJ }}/app/build/outputs/apk/debug/app-debug.apk
